@@ -41,6 +41,12 @@ else:
     community = args.community
     port = args.port
 
+if port > -1:
+    sensorNameOID += (port,)
+    valueOID += (port,)
+    unitOID += (port,)
+    stateOID += (port,)
+
 def convert_state_to_nagios(state):
     if state == 2:
         return NagiosState.OK
