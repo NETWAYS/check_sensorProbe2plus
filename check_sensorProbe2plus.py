@@ -6,13 +6,13 @@ import argparse
 
 class Types(IntEnum):
     NAME = 2
-    VALUE = 4
     UNIT = 5
     STATE = 6
     LOW_CRITICAL = 9
     LOW_WARNING = 10
     HIGH_WARNING = 11
     HIGH_CRITICAL = 12
+    VALUE = 20
 
 
 class NagiosState(Enum):
@@ -55,7 +55,7 @@ def print_status_message(state, perfData, stateCount):
 
 version = 1.0
 
-indexesNeeded = [2, 4, 5, 6, 9, 10, 11, 12]
+indexesNeeded = [2, 5, 6, 9, 10, 11, 12, 20]
 
 verbose = 0
 hostname = ""
@@ -117,13 +117,21 @@ for data in result:
 
 for port, sensorIndexes in sensors.iteritems():
     for sensorIndex, indexes in sensorIndexes.iteritems():
-        state = convert_state_to_nagios(indexes[6])
+        state = convert_state_to_nagios(indexes[Types.STATE])
         if state.value > mostImportantState.value:
             mostImportantState = state
         stateCounts[state.value] += 1
+
+        if indexes[Types.UNIT] == "C":
+            indexes[Types.VALUE] = float(indexes[Types.VALUE]) / 10
+            indexes[Types.LOW_CRITICAL] = float(indexes[Types.LOW_CRITICAL]) / 10
+            indexes[Types.LOW_WARNING] = float(indexes[Types.LOW_WARNING]) / 10
+            indexes[Types.HIGH_WARNING] = float(indexes[Types.HIGH_WARNING]) / 10
+            indexes[Types.HIGH_CRITICAL] = float(indexes[Types.HIGH_CRITICAL]) / 10
+
         stateMessages.append(
             "%s %s: %s%s" % (state.name, indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT]))
-        perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT], indexes[Types.LOW_CRITICAL], indexes[Types.LOW_WARNING], indexes[Types.HIGH_WARNING], indexes[Types.HIGH_WARNING]))
+        perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT], indexes[Types.LOW_WARNING], indexes[Types.HIGH_WARNING], indexes[Types.LOW_CRITICAL], indexes[Types.HIGH_CRITICAL]))
 
 print_status_message(mostImportantState, perfData, stateCounts)
 
