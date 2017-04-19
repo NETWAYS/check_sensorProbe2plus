@@ -136,7 +136,7 @@ states = {"OK": [], "WARNING": [], "CRITICAL": []}
 for port, sensorIndexes in sensors.iteritems():
     for sensorIndex, indexes in sensorIndexes.iteritems():
         state = convert_state_to_nagios(indexes[Types.STATE])
-        if state.value() > mostImportantState.value():
+        if state.value > mostImportantState.value:
             mostImportantState = state
 
         states[state.name].append(indexes[Types.NAME])
