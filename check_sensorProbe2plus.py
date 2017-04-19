@@ -122,6 +122,11 @@ for port, sensorIndexes in sensors.iteritems():
             mostImportantState = state
         stateCounts[state.value] += 1
 
+        if not indexes.has_key(Types.VALUE):
+            stateMessages.append(
+                "%s %s" % (state.name, indexes[Types.NAME]))
+            continue
+
         if indexes[Types.UNIT] == "C":
             indexes[Types.VALUE] = float(indexes[Types.VALUE]) / 10
             indexes[Types.LOW_CRITICAL] = float(indexes[Types.LOW_CRITICAL]) / 10
@@ -131,7 +136,9 @@ for port, sensorIndexes in sensors.iteritems():
 
         stateMessages.append(
             "%s %s: %s%s" % (state.name, indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT]))
-        perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT], indexes[Types.LOW_WARNING], indexes[Types.HIGH_WARNING], indexes[Types.LOW_CRITICAL], indexes[Types.HIGH_CRITICAL]))
+        perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (
+        indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT], indexes[Types.LOW_WARNING],
+        indexes[Types.HIGH_WARNING], indexes[Types.LOW_CRITICAL], indexes[Types.HIGH_CRITICAL]))
 
 print_status_message(mostImportantState, perfData, stateCounts)
 
