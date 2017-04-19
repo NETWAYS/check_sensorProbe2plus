@@ -26,7 +26,7 @@ port = 0
 parser = argparse.ArgumentParser(description='Check plugin for AKCP SensorProbe2+')
 parser.add_argument("-V", "--version", action="store_true")
 parser.add_argument("-v", "--verbose", action="count", default=0, help="increase output verbosity")
-parser.add_argument("-p", "--port", help="port of the sensor to check", type=int, default=-1)
+parser.add_argument("-p", "--port", help="port of the sensor to check", type=int, default=0)
 required = parser.add_argument_group('required arguments')
 required.add_argument("-H", "--hostname", help="host of the SensorProbe2+", required=True)
 required.add_argument("-C", "--community", help="community of the SensorProbe2+", required=True)
@@ -41,7 +41,8 @@ else:
     community = args.community
     port = args.port
 
-if port > -1:
+if port > 0:
+    port -= 1
     sensorNameOID += (port,)
     valueOID += (port,)
     unitOID += (port,)
@@ -58,7 +59,10 @@ def convert_state_to_nagios(state):
 def print_status_message(state, perfData, stateCount):
     message = ""
 
-    if state.value == 0:
+    if len(perfData) < 1:
+        print "%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name
+        exit(3)
+    elif state.value == 0:
         message = "%s sensorProbe2plus: Sensor reports that everything is fine" % state.name
     elif state.value == 1:
         message = "%s sensorProbe2plus: Sensor reports that %d %s in state WARNING" % (state.name, stateCount[1], "sensors are" if stateCount[1] > 1 else "sensor is")
