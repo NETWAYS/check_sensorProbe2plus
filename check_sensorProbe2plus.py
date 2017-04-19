@@ -32,25 +32,43 @@ def convert_state_to_nagios(state):
         return NagiosState.CRITICAL
 
 
-def print_status_message(state, perfData, stateCount):
-    message = ""
+def print_status_message(states, perfData):
+    warning_name_string = ""
+    for name in states["WARNING"]:
+        warning_name_string += ", " if not warning_name_string == "" else "" + name
 
+    critical_name_string = ""
+    for name in states["CRITICAL"]:
+        critical_name_string += ", " if not critical_name_string == "" else "" + name
+
+    result_message = ""
     if len(perfData) < 1:
         print "%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name
         exit(3)
-    elif state.value == 0:
-        message = "%s sensorProbe2plus: Sensor reports that everything is fine" % state.name
-    elif state.value == 1:
-        message = "%s sensorProbe2plus: Sensor reports that %d %s in state WARNING" % (state.name, stateCount[1], "sensors are" if stateCount[1] > 1 else "sensor is")
-    elif state.value == 2:
-        message = "%s sensorProbe2plus: Sensor reports that %d %s in state CRITICAL" % (state.name, stateCount[2], "sensors are" if stateCount[2] > 1 else "sensor is")
+    elif len(states["WARNING"]) > 0 and len(states["CRITICAL"]) > 0:
+        result_message = "CRITICAL sensorProbe2plus: Sensor reports state CRITICAL for %d sensor%s (%s) " \
+                "and state WARNING for %d sensor%s (%s)" % (
+                    len(states["CRITICAL"]),
+                    "s" if len(states["CRITICAL"]) > 1 else "",
+                    critical_name_string,
+                    len(states["WARNING"]),
+                    "s" if len(states["WARNING"]) > 1 else "",
+                    warning_name_string
+                )
+    elif len(states["WARNING"]) > 0:
+        result_message = "WARNING sensorProbe2plus: Sensor reports state WARNING for %d sensor%s (%s)" % (
+            len(states["WARNING"]), "s" if len(states["WARNING"]) > 1 else "", warning_name_string)
+    elif len(states["CRITICAL"]) > 0:
+        result_message = "CRITICAL sensorProbe2plus: Sensor reports state CRITICAL for %d sensor%s (%s)" % (
+            len(states["CRITICAL"]), "s" if len(states["CRITICAL"]) > 1 else "", critical_name_string)
+    else:
+        result_message = "OK sensorProbe2plus: Sensor reports that everything is fine"
 
-    if verbose > 0:
-        message += "|"
-        for data in perfData:
-            message += data + " "
+    result_message += "|"
+    for data in perfData:
+        result_message += data + " "
 
-    print message
+    print result_message
 
 
 version = 1.0
@@ -86,7 +104,6 @@ result = session.walk("1.3.6.1.4.1.3854.3.5")
 mostImportantState = NagiosState.OK
 stateMessages = []
 perfData = []
-stateCounts = [0, 0, 0]
 sensors = {}
 
 for data in result:
@@ -115,16 +132,19 @@ for data in result:
 
     sensors[port][sensorIndex][index] = value
 
+states = {"OK": [], "WARNING": [], "CRITICAL": []}
 for port, sensorIndexes in sensors.iteritems():
     for sensorIndex, indexes in sensorIndexes.iteritems():
         state = convert_state_to_nagios(indexes[Types.STATE])
-        if state.value > mostImportantState.value:
+        if state.value() > mostImportantState.value():
             mostImportantState = state
-        stateCounts[state.value] += 1
+
+        states[state.name].append(indexes[Types.NAME])
 
         if not indexes.has_key(Types.VALUE):
             stateMessages.append(
                 "%s %s" % (state.name, indexes[Types.NAME]))
+            perfData.append("'%s'=%s;" % (indexes[Types.NAME], state.value))
             continue
 
         if indexes[Types.UNIT] == "C":
@@ -137,12 +157,12 @@ for port, sensorIndexes in sensors.iteritems():
         stateMessages.append(
             "%s %s: %s%s" % (state.name, indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT]))
         perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (
-        indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT], indexes[Types.LOW_WARNING],
-        indexes[Types.HIGH_WARNING], indexes[Types.LOW_CRITICAL], indexes[Types.HIGH_CRITICAL]))
+            indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT], indexes[Types.LOW_WARNING],
+            indexes[Types.HIGH_WARNING], indexes[Types.LOW_CRITICAL], indexes[Types.HIGH_CRITICAL]))
 
-print_status_message(mostImportantState, perfData, stateCounts)
+print_status_message(states, perfData)
 
-if verbose > 1:
+if verbose > 0:
     for message in stateMessages:
         print message
 
