@@ -1,7 +1,18 @@
-from pysnmp.entity.rfc3413.oneliner import cmdgen
-from enum import Enum
+from easysnmp import Session
+from enum import Enum, IntEnum
 import sys
 import argparse
+
+
+class Types(IntEnum):
+    NAME = 2
+    VALUE = 4
+    UNIT = 5
+    STATE = 6
+    LOW_CRITICAL = 9
+    LOW_WARNING = 10
+    HIGH_WARNING = 11
+    HIGH_CRITICAL = 12
 
 
 class NagiosState(Enum):
@@ -11,12 +22,40 @@ class NagiosState(Enum):
     UNKNOWN = 3
 
 
-sensorNameOID   = (1, 3, 6, 1, 4, 1, 3854, 3, 5, 1, 1, 2, 0, 0, 0)
-valueOID        = (1, 3, 6, 1, 4, 1, 3854, 3, 5, 1, 1, 4, 0, 0, 0)
-unitOID         = (1, 3, 6, 1, 4, 1, 3854, 3, 5, 1, 1, 5, 0, 0, 0)
-stateOID        = (1, 3, 6, 1, 4, 1, 3854, 3, 5, 1, 1, 6, 0, 0, 0)
+def convert_state_to_nagios(state):
+    state = int(state)
+    if state == 2:
+        return NagiosState.OK
+    elif state == 3 or state == 5:
+        return NagiosState.WARNING
+    elif state == 4 or state == 6:
+        return NagiosState.CRITICAL
+
+
+def print_status_message(state, perfData, stateCount):
+    message = ""
+
+    if len(perfData) < 1:
+        print "%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name
+        exit(3)
+    elif state.value == 0:
+        message = "%s sensorProbe2plus: Sensor reports that everything is fine" % state.name
+    elif state.value == 1:
+        message = "%s sensorProbe2plus: Sensor reports that %d %s in state WARNING" % (state.name, stateCount[1], "sensors are" if stateCount[1] > 1 else "sensor is")
+    elif state.value == 2:
+        message = "%s sensorProbe2plus: Sensor reports that %d %s in state CRITICAL" % (state.name, stateCount[2], "sensors are" if stateCount[2] > 1 else "sensor is")
+
+    if verbose > 0:
+        message += "|"
+        for data in perfData:
+            message += data + " "
+
+    print message
+
 
 version = 1.0
+
+indexesNeeded = [2, 4, 5, 6, 9, 10, 11, 12]
 
 verbose = 0
 hostname = ""
@@ -41,81 +80,55 @@ else:
     community = args.community
     port = args.port
 
-if port > 0:
-    port -= 1
-    sensorNameOID += (port,)
-    valueOID += (port,)
-    unitOID += (port,)
-    stateOID += (port,)
-
-def convert_state_to_nagios(state):
-    if state == 2:
-        return NagiosState.OK
-    elif state == 3 or state == 5:
-        return NagiosState.WARNING
-    elif state == 4 or state == 6:
-        return NagiosState.CRITICAL
-
-def print_status_message(state, perfData, stateCount):
-    message = ""
-
-    if len(perfData) < 1:
-        print "%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name
-        exit(3)
-    elif state.value == 0:
-        message = "%s sensorProbe2plus: Sensor reports that everything is fine" % state.name
-    elif state.value == 1:
-        message = "%s sensorProbe2plus: Sensor reports that %d %s in state WARNING" % (state.name, stateCount[1], "sensors are" if stateCount[1] > 1 else "sensor is")
-    elif state.value == 2:
-        message = "%s sensorProbe2plus: Sensor reports that %d %s in state CRITICAL" % (state.name, stateCount[2], "sensors are" if stateCount[2] > 1 else "sensor is")
-
-    if verbose > 0:
-        message += "|"
-        for data in perfData:
-            message += data + " "
-
-    print message
-
-generator = cmdgen.CommandGenerator()
-communityData = cmdgen.CommunityData(community)
-transport = cmdgen.UdpTransportTarget((hostname, 161))
-
-command = getattr(generator, 'nextCmd')
-
-errorIndication, errorStatus, errorIndex, sensorNames = command(communityData, transport, sensorNameOID)
-sensorValues = command(communityData, transport, valueOID)[3]
-sensorUnits = command(communityData, transport, unitOID)[3]
-sensorStates = command(communityData, transport, stateOID)[3]
+session = Session(hostname=hostname, community=community, version=2)
+result = session.walk("1.3.6.1.4.1.3854.3.5")
 
 mostImportantState = NagiosState.OK
-if errorIndication:
-    print "%s %s" % (NagiosState.UNKNOWN.name, errorIndication)
-    mostImportantState = NagiosState.UNKNOWN
-elif errorStatus:
-    print('%s %s at %s' % (
-        NagiosState.CRITICAL.name,
-        errorStatus.prettyPrint(),
-            errorIndex and sensorNames[int(errorIndex)-1] or '?'
-        )
-    )
-    mostImportantState = NagiosState.CRITICAL
-else:
-    stateMessages = []
-    perfData = []
-    stateCounts = [0, 0, 0]
-    for sensorName in sensorNames:
-        key = sensorNames.index(sensorName)
-        state = convert_state_to_nagios(sensorStates[key][0][1])
+stateMessages = []
+perfData = []
+stateCounts = [0, 0, 0]
+sensors = {}
+
+for data in result:
+    oid = data.oid.split(".")
+    value = data.value
+
+    index = int(oid[11])
+    if index not in indexesNeeded:
+        continue
+
+    category = int(oid[9])
+    if category == 1 or category > 20:
+        continue
+
+    port = int(oid[15])
+    if not args.port == 0 and not args.port - 1 == port:
+        continue
+
+    sensorIndex = int(oid[16])
+
+    if not sensors.has_key(port):
+        sensors[port] = {}
+
+    if not sensors[port].has_key(sensorIndex):
+        sensors[port][sensorIndex] = {}
+
+    sensors[port][sensorIndex][index] = value
+
+for port, sensorIndexes in sensors.iteritems():
+    for sensorIndex, indexes in sensorIndexes.iteritems():
+        state = convert_state_to_nagios(indexes[6])
         if state.value > mostImportantState.value:
             mostImportantState = state
         stateCounts[state.value] += 1
-        stateMessages.append("%s %s: %s%s" % (state.name, sensorName[0][1], sensorValues[key][0][1], sensorUnits[key][0][1]))
-        perfData.append("'%s'=%s%s" % (sensorName[0][1], sensorValues[key][0][1], sensorUnits[key][0][1]))
+        stateMessages.append(
+            "%s %s: %s%s" % (state.name, indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT]))
+        perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT], indexes[Types.LOW_CRITICAL], indexes[Types.LOW_WARNING], indexes[Types.HIGH_WARNING], indexes[Types.HIGH_WARNING]))
 
-    print_status_message(mostImportantState, perfData, stateCounts)
+print_status_message(mostImportantState, perfData, stateCounts)
 
-    if verbose > 1:
-        for message in stateMessages:
-            print message
+if verbose > 1:
+    for message in stateMessages:
+        print message
 
-    exit(mostImportantState.value)
+exit(mostImportantState.value)
