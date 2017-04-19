@@ -117,3 +117,5 @@ else:
     if verbose > 1:
         for message in stateMessages:
             print message
+
+    exit(mostImportantState.value)
