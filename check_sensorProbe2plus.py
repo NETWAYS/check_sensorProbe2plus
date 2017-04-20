@@ -110,7 +110,7 @@ required.add_argument("-C", "--community", help="community of the SensorProbe2+"
 args = parser.parse_args()
 if args.version:
     print "AKCP SensorProbe2+ Version %s" % version
-    sys.exit()
+    exit()
 else:
     verbose = args.verbose if args.verbose <= 2 else 2
     hostname = args.hostname
