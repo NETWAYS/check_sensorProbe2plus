@@ -91,7 +91,7 @@ if args.version:
     print "AKCP SensorProbe2+ Version %s" % version
     sys.exit()
 else:
-    verbose = args.verbose if args.verbose <= 3 else 3
+    verbose = args.verbose if args.verbose <= 2 else 2
     hostname = args.hostname
     community = args.community
     port = args.port
