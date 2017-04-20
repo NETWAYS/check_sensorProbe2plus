@@ -244,7 +244,7 @@ else:
 
                 # Add thresholds to verbose sensor messages
                 if verbose > 1:
-                    stateMessage += "|" + "%s:%s;%s:%s" % (
+                    stateMessage += " (%s:%s/%s:%s)" % (
                         valueIndexes[Types.LOW_WARNING], valueIndexes[Types.HIGH_WARNING],
                         valueIndexes[Types.LOW_CRITICAL], valueIndexes[Types.HIGH_CRITICAL])
 
