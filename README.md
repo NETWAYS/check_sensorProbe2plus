@@ -2,29 +2,33 @@
 
 ### Description ###
 
-This plugin serves the purpose of receiving data from the AKCP devices and checking the thresholds of the connected probes.
+This plugin serves the purpose of receiving data from the SensorProbe2+ and checking its state.
 
-### Installation ###
 
-# **ADD A HOW TO INSTALL** #
+### Dependencies ###
+
++ [PySNMP](https://github.com/etingof/pysnmp)
 
 ### Usage ###
+
 ```
-check_sensorProbe2plus.py -H -C [-p][-V][-v][-h]
+check_sensorProbe2plus.py -H -C [-p] [-V] [-v] [-h]
 ```
+
 #### required arguments: ####
-* **HOSTNAME:** host of the SensorProbe2+
+
++ **HOSTNAME:** host of the SensorProbe2+
   `` -H, --hostname  ``
-* **COMMUNITY:** community of the SensorProbe2+
++ **COMMUNITY:** read community of the SensorProbe2+
   `` -C, --community ``
 
-### optional arguments: ###
-* **HELP** show the help message and exit
+#### optional arguments: ####
+
++ **HELP** show the help message and exit
   `` -h, --help ``
-* **VERSION** shows the current version of the check plugin
++ **VERSION** shows the current version of the check plugin
   `` -V, --version ``
-* **VERBOSE** increases output verbosity, has 2 stages:
++ **VERBOSE** increases output verbosity (-v or -vv)
   `` -v, --verbose ``
-  `` -vv ``
-* **PORT** port of the sensor to check
++ **PORT** port of the sensor to check (shows all if not set)
   `` -p, --port ``
