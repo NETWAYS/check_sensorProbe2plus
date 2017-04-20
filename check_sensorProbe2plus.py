@@ -73,8 +73,6 @@ def print_status_message(states, perfData):
 
 version = 1.0
 
-indexesNeeded = [2, 5, 6, 9, 10, 11, 12, 20]
-
 verbose = 0
 hostname = ""
 community = ""
@@ -111,7 +109,10 @@ for data in result:
     value = data.value
 
     index = int(oid[11])
-    if index not in indexesNeeded:
+
+    try:
+        Types(index)
+    except ValueError:
         continue
 
     category = int(oid[9])
