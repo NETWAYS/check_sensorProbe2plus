@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # ------------------------------------------------------------------------------
 # check_sensorProbe2plus.py - A check plugin for AKCP SensorProbe2+.
 # Copyright (C) 2017  NETWAYS GmbH, www.netways.de
