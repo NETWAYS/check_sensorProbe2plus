@@ -142,9 +142,10 @@ for port, sensorIndexes in sensors.iteritems():
         states[state.name].append(indexes[Types.NAME])
 
         if not indexes.has_key(Types.VALUE):
+            value = 0 if state == NagiosState.OK else 1
             stateMessages.append(
                 "%s %s" % (state.name, indexes[Types.NAME]))
-            perfData.append("'%s'=%s;" % (indexes[Types.NAME], state.value))
+            perfData.append("'%s'=%s;" % (indexes[Types.NAME], value))
             continue
 
         if indexes[Types.UNIT] == "C":
@@ -154,8 +155,13 @@ for port, sensorIndexes in sensors.iteritems():
             indexes[Types.HIGH_WARNING] = float(indexes[Types.HIGH_WARNING]) / 10
             indexes[Types.HIGH_CRITICAL] = float(indexes[Types.HIGH_CRITICAL]) / 10
 
-        stateMessages.append(
-            "%s %s: %s%s" % (state.name, indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT]))
+        stateMessage = "%s %s: %s%s" % (state.name, indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT])
+        if verbose > 1:
+            stateMessage += "|" + "%s:%s;%s:%s" % (
+                indexes[Types.LOW_WARNING], indexes[Types.HIGH_WARNING],
+                indexes[Types.LOW_CRITICAL], indexes[Types.HIGH_CRITICAL])
+
+        stateMessages.append(stateMessage)
         perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (
             indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT], indexes[Types.LOW_WARNING],
             indexes[Types.HIGH_WARNING], indexes[Types.LOW_CRITICAL], indexes[Types.HIGH_CRITICAL]))
