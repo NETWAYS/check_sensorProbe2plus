@@ -100,11 +100,11 @@ port = 0
 
 parser = argparse.ArgumentParser(description='Check plugin for AKCP SensorProbe2+')
 parser.add_argument("-V", "--version", action="store_true")
-parser.add_argument("-v", "--verbose", action="count", default=0, help="increase output verbosity")
-parser.add_argument("-p", "--port", help="port of the sensor to check", type=int, default=0)
+parser.add_argument("-v", "--verbose", action="count", default=0, help="increase output verbosity (-v or -vv)")
+parser.add_argument("-p", "--port", help="port of the sensors to check (shows all if not set)", type=int, default=0)
 required = parser.add_argument_group('required arguments')
-required.add_argument("-H", "--hostname", help="host of the SensorProbe2+", required=True)
-required.add_argument("-C", "--community", help="community of the SensorProbe2+", required=True)
+required.add_argument("-H", "--hostname", help="host of the sensor probe", required=True)
+required.add_argument("-C", "--community", help="read community of the sensor probe", required=True)
 
 args = parser.parse_args()
 if args.version:
