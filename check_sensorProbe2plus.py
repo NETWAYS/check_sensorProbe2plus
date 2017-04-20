@@ -65,7 +65,7 @@ def print_status_message(states, perfData):
     result_message = ""
     if len(perfData) < 1:
         print "%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name
-        exit(3)
+        exit(NagiosState.UNKNOWN)
     elif len(states["WARNING"]) > 0 and len(states["CRITICAL"]) > 0:
         result_message = "CRITICAL sensorProbe2plus: Sensor reports state CRITICAL for %d sensor%s (%s) " \
                 "and state WARNING for %d sensor%s (%s)" % (
