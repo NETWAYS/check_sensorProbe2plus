@@ -25,6 +25,7 @@ from enum import Enum, IntEnum
 import argparse
 
 
+# Translate the OID indexes to keywords
 class Types(IntEnum):
     NAME = 2
     UNIT = 5
@@ -36,6 +37,7 @@ class Types(IntEnum):
     VALUE = 20
 
 
+# Translate the Nagios state IDs to keywords
 class NagiosState(Enum):
     OK = 0
     WARNING = 1
@@ -43,6 +45,7 @@ class NagiosState(Enum):
     UNKNOWN = 3
 
 
+# Convert a state from AKCP format to Nagios
 def convert_state_to_nagios(state_to_convert):
     state_to_convert = int(state_to_convert)
     if state_to_convert == 2:
@@ -53,6 +56,10 @@ def convert_state_to_nagios(state_to_convert):
         return NagiosState.CRITICAL
 
 
+# Display a one line status message with:
+#   - most important Nagios state and short message
+#   - number and name of the sensors in any state but OK
+#   - thresholds of the sensors
 def print_status_message(sensor_states, perf_data):
     warning_name_string = ""
     for name in sensor_states["WARNING"]:
@@ -63,10 +70,7 @@ def print_status_message(sensor_states, perf_data):
         critical_name_string += ", " if not critical_name_string == "" else "" + name
 
     result_message = ""
-    if len(perf_data) < 1:
-        print "%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name
-        exit(NagiosState.UNKNOWN.value)
-    elif len(sensor_states["WARNING"]) > 0 and len(sensor_states["CRITICAL"]) > 0:
+    if len(sensor_states["WARNING"]) > 0 and len(sensor_states["CRITICAL"]) > 0:
         result_message = "CRITICAL sensorProbe2plus: Sensor reports state CRITICAL for %d sensor%s (%s) " \
                 "and state WARNING for %d sensor%s (%s)" % (
                     len(sensor_states["CRITICAL"]),
@@ -85,20 +89,25 @@ def print_status_message(sensor_states, perf_data):
     else:
         result_message = "OK sensorProbe2plus: Sensor reports that everything is fine"
 
+    # Add the performance data to the end of the first output line
     result_message += "|"
     for singlePerfData in perf_data:
         result_message += singlePerfData + " "
 
+    # Print summary and performance data
     print result_message
 
 
+# Version number
 version = 1.0
 
+# Initialise variables
 verbose = 0
 hostname = ""
 community = ""
 port = 0
 
+# Arguments for the CLI command
 parser = argparse.ArgumentParser(description='Check plugin for AKCP SensorProbe2+')
 parser.add_argument("-V", "--version", action="store_true")
 parser.add_argument("-v", "--verbose", action="count", default=0, help="increase output verbosity (-v or -vv)")
@@ -108,15 +117,31 @@ required.add_argument("-H", "--hostname", help="host of the sensor probe", requi
 required.add_argument("-C", "--community", help="read community of the sensor probe", required=True)
 
 args = parser.parse_args()
+
+# Print version if version argument is given
 if args.version:
     print "AKCP SensorProbe2+ Version %s" % version
     exit()
 else:
+    # Assert arguments to their variables
     verbose = args.verbose if args.verbose <= 2 else 2
     hostname = args.hostname
     community = args.community
     port = args.port
 
+# The state with the highest importance (CRITICAL -> WARNING -> OK)
+mostImportantState = NagiosState.OK
+
+# Array of messages to print after first line if verbose
+stateMessages = []
+
+# Performance data for each sensor as string
+perfData = []
+
+# Root for sensor dictionary tree
+sensorPorts = {}
+
+# Root for sensor OIDs
 sensorsOID = (1, 3, 6, 1, 4, 1, 3854, 3, 5)
 
 generator = cmdgen.CommandGenerator()
@@ -126,11 +151,7 @@ command = getattr(generator, 'nextCmd')
 
 errorIndication, errorStatus, errorIndex, result = command(communityData, transport, sensorsOID)
 
-mostImportantState = NagiosState.OK
-stateMessages = []
-perfData = []
-sensorPorts = {}
-
+# Check if an exception occurred
 if errorIndication:
     print "%s sensorProbe2plus: %s" % (NagiosState.UNKNOWN.name, errorIndication)
     mostImportantState = NagiosState.UNKNOWN
@@ -141,77 +162,108 @@ elif errorStatus:
     )
     mostImportantState = NagiosState.CRITICAL
 else:
+    # Sort results
     for data in result:
         oid = data[0][0]
         value = data[0][1]
 
+        # Filter relevant OIDs
         valueIndex = int(oid[11])
-
         try:
             Types(valueIndex)
         except ValueError as err:
             continue
 
+        # Get sensor category
         category = int(oid[9])
-        if category == 1 or category > 20:
+        if category == 1 or category > 27:
             continue
 
+        # Filter ports if port is given in arguments
         sensorPort = int(oid[15])
         if not args.port == 0 and not args.port - 1 == sensorPort:
             continue
 
+        # Numeric index of sensor
         sensorIndex = int(oid[16])
 
+        # Add needed dictionaries if not yet existing
         if sensorPort not in sensorPorts:
             sensorPorts[sensorPort] = {}
-
         if sensorIndex not in sensorPorts[sensorPort]:
             sensorPorts[sensorPort][sensorIndex] = {}
 
+        # Store data in dictionary tree
         sensorPorts[sensorPort][sensorIndex][valueIndex] = value
 
-    states = {"OK": [], "WARNING": [], "CRITICAL": []}
+    # Check if there is no sensor on the given port
+    if len(sensorPorts) < 1:
+        print "%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name
+        exit(NagiosState.UNKNOWN.value)
+
+    # Sensor names sorted by state
+    namesByState = {"OK": [], "WARNING": [], "CRITICAL": []}
+
+    # Iterate through sensors
     for sensorPort, sensorIndexes in sensorPorts.iteritems():
         for sensorIndex, valueIndexes in sensorIndexes.iteritems():
+            # Convert state to Nagios states
             state = convert_state_to_nagios(valueIndexes[Types.STATE])
+
+            # Redetermines most important state
             if state.value > mostImportantState.value:
                 mostImportantState = state
 
-            states[state.name].append(valueIndexes[Types.NAME])
+            # Sort sensor name by state
+            namesByState[state.name].append(valueIndexes[Types.NAME])
 
+            # Check if sensor has no value
             if Types.VALUE not in valueIndexes:
+                # Value replacement for sensors without value
                 value = 0 if state == NagiosState.OK else 1
+
+                # Status message for sensor
                 stateMessages.append(
                     "%s %s" % (state.name, valueIndexes[Types.NAME]))
+
+                # Add performance data to performance data array
                 perfData.append("'%s'=%s;" % (valueIndexes[Types.NAME], value))
-                continue
+            else:
+                # Convert temperatures into right format
+                if valueIndexes[Types.UNIT] == "C":
+                    valueIndexes[Types.VALUE] = float(valueIndexes[Types.VALUE]) / 10
+                    valueIndexes[Types.LOW_CRITICAL] = float(valueIndexes[Types.LOW_CRITICAL]) / 10
+                    valueIndexes[Types.LOW_WARNING] = float(valueIndexes[Types.LOW_WARNING]) / 10
+                    valueIndexes[Types.HIGH_WARNING] = float(valueIndexes[Types.HIGH_WARNING]) / 10
+                    valueIndexes[Types.HIGH_CRITICAL] = float(valueIndexes[Types.HIGH_CRITICAL]) / 10
 
-            if valueIndexes[Types.UNIT] == "C":
-                valueIndexes[Types.VALUE] = float(valueIndexes[Types.VALUE]) / 10
-                valueIndexes[Types.LOW_CRITICAL] = float(valueIndexes[Types.LOW_CRITICAL]) / 10
-                valueIndexes[Types.LOW_WARNING] = float(valueIndexes[Types.LOW_WARNING]) / 10
-                valueIndexes[Types.HIGH_WARNING] = float(valueIndexes[Types.HIGH_WARNING]) / 10
-                valueIndexes[Types.HIGH_CRITICAL] = float(valueIndexes[Types.HIGH_CRITICAL]) / 10
+                # Status message for sensor
+                stateMessage = "%s %s: %s%s" % (
+                    state.name, valueIndexes[Types.NAME], valueIndexes[Types.VALUE], valueIndexes[Types.UNIT]
+                )
 
-            stateMessage = "%s %s: %s%s" % (
-                state.name, valueIndexes[Types.NAME], valueIndexes[Types.VALUE], valueIndexes[Types.UNIT]
-            )
-            if verbose > 1:
-                stateMessage += "|" + "%s:%s;%s:%s" % (
-                    valueIndexes[Types.LOW_WARNING], valueIndexes[Types.HIGH_WARNING],
-                    valueIndexes[Types.LOW_CRITICAL], valueIndexes[Types.HIGH_CRITICAL])
+                # Add thresholds to verbose sensor messages
+                if verbose > 1:
+                    stateMessage += "|" + "%s:%s;%s:%s" % (
+                        valueIndexes[Types.LOW_WARNING], valueIndexes[Types.HIGH_WARNING],
+                        valueIndexes[Types.LOW_CRITICAL], valueIndexes[Types.HIGH_CRITICAL])
 
-            stateMessages.append(stateMessage)
-            perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (
-                valueIndexes[Types.NAME], valueIndexes[Types.VALUE], valueIndexes[Types.UNIT],
-                valueIndexes[Types.LOW_WARNING], valueIndexes[Types.HIGH_WARNING], valueIndexes[Types.LOW_CRITICAL],
-                valueIndexes[Types.HIGH_CRITICAL])
-            )
+                stateMessages.append(stateMessage)
 
-    print_status_message(states, perfData)
+                # Add performance data to performance data array
+                perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (
+                    valueIndexes[Types.NAME], valueIndexes[Types.VALUE], valueIndexes[Types.UNIT],
+                    valueIndexes[Types.LOW_WARNING], valueIndexes[Types.HIGH_WARNING], valueIndexes[Types.LOW_CRITICAL],
+                    valueIndexes[Types.HIGH_CRITICAL])
+                )
 
+    # Print first line of output
+    print_status_message(namesByState, perfData)
+
+    # Add additional information for each sensor to the output if verbose
     if verbose > 0:
         for message in stateMessages:
             print message
 
+    # Exit with most important state
     exit(mostImportantState.value)
