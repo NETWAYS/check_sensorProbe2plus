@@ -4,6 +4,7 @@ import sys
 import argparse
 
 
+# Translate the OID values from the MIB format to keywords
 class Types(IntEnum):
     NAME = 2
     UNIT = 5
@@ -15,6 +16,7 @@ class Types(IntEnum):
     VALUE = 20
 
 
+# Translate the Nagios state IDs to keywords
 class NagiosState(Enum):
     OK = 0
     WARNING = 1
@@ -22,6 +24,7 @@ class NagiosState(Enum):
     UNKNOWN = 3
 
 
+# Convert the states from the MIB file format to Nagios states
 def convert_state_to_nagios(state):
     state = int(state)
     if state == 2:
@@ -32,6 +35,10 @@ def convert_state_to_nagios(state):
         return NagiosState.CRITICAL
 
 
+# Display a one line status message with:
+#   - most important Nagios state and short message
+#   - number and name of the sensors in any state but OK
+#   - thresholds of the sensors
 def print_status_message(states, perfData):
     warning_name_string = ""
     for name in states["WARNING"]:
@@ -64,6 +71,7 @@ def print_status_message(states, perfData):
     else:
         result_message = "OK sensorProbe2plus: Sensor reports that everything is fine"
 
+    # Add the performance data to the end of the first output line
     result_message += "|"
     for data in perfData:
         result_message += data + " "
@@ -71,15 +79,18 @@ def print_status_message(states, perfData):
     print result_message
 
 
+# Version number
 version = 1.0
 
 indexesNeeded = [2, 5, 6, 9, 10, 11, 12, 20]
 
+# Initialise variables with defaults
 verbose = 0
 hostname = ""
 community = ""
 port = 0
 
+# Arguments for the CLI command
 parser = argparse.ArgumentParser(description='Check plugin for AKCP SensorProbe2+')
 parser.add_argument("-V", "--version", action="store_true")
 parser.add_argument("-v", "--verbose", action="count", default=0, help="increase output verbosity")
@@ -88,6 +99,7 @@ required = parser.add_argument_group('required arguments')
 required.add_argument("-H", "--hostname", help="host of the SensorProbe2+", required=True)
 required.add_argument("-C", "--community", help="community of the SensorProbe2+", required=True)
 
+# Display version number
 args = parser.parse_args()
 if args.version:
     print "AKCP SensorProbe2+ Version %s" % version
@@ -101,27 +113,33 @@ else:
 session = Session(hostname=hostname, community=community, version=2)
 result = session.walk("1.3.6.1.4.1.3854.3.5")
 
+# The state with the highest gravity (CRITICAL -> WARNING -> OK)
 mostImportantState = NagiosState.OK
 stateMessages = []
 perfData = []
 sensors = {}
 
+# Categorise extracted data
 for data in result:
     oid = data.oid.split(".")
     value = data.value
 
+    # Filter relevant OIDs
     index = int(oid[11])
     if index not in indexesNeeded:
         continue
 
+    # Get sensor category
     category = int(oid[9])
     if category == 1 or category > 20:
         continue
 
+    # Filter ports if given in the command
     port = int(oid[15])
     if not args.port == 0 and not args.port - 1 == port:
         continue
 
+    # Numeric index for sensors on the same port
     sensorIndex = int(oid[16])
 
     if not sensors.has_key(port):
@@ -132,6 +150,7 @@ for data in result:
 
     sensors[port][sensorIndex][index] = value
 
+# Count the states for the output
 states = {"OK": [], "WARNING": [], "CRITICAL": []}
 for port, sensorIndexes in sensors.iteritems():
     for sensorIndex, indexes in sensorIndexes.iteritems():
@@ -155,6 +174,7 @@ for port, sensorIndexes in sensors.iteritems():
             indexes[Types.HIGH_WARNING] = float(indexes[Types.HIGH_WARNING]) / 10
             indexes[Types.HIGH_CRITICAL] = float(indexes[Types.HIGH_CRITICAL]) / 10
 
+        # Add thresholds to verbose sensor messages
         stateMessage = "%s %s: %s%s" % (state.name, indexes[Types.NAME], indexes[Types.VALUE], indexes[Types.UNIT])
         if verbose > 1:
             stateMessage += "|" + "%s:%s;%s:%s" % (
@@ -168,6 +188,7 @@ for port, sensorIndexes in sensors.iteritems():
 
 print_status_message(states, perfData)
 
+# Add short overview lines for each sensor to the output
 if verbose > 0:
     for message in stateMessages:
         print message
