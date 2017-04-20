@@ -2,7 +2,9 @@
 # ------------------------------------------------------------------------------
 # check_sensorProbe2plus.py - A check plugin for AKCP SensorProbe2+.
 # Copyright (C) 2017  NETWAYS GmbH, www.netways.de
-# Authors: Noah Hilverling <noah.hilverling@netways.de>, Jennifer Mourek <jennifer.mourek@netways.de>
+# Authors: Noah Hilverling <noah.hilverling@netways.de>
+#          Jennifer Mourek <jennifer.mourek@netways.de>
+#
 # Version: 1.0
 #
 # This program is free software; you can redistribute it and/or
@@ -20,13 +22,15 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 # ------------------------------------------------------------------------------
 
+import argparse
+import sys
 from pysnmp.entity.rfc3413.oneliner import cmdgen
 from enum import Enum, IntEnum
-import argparse
 
 
 # Translate the OID indexes to keywords
 class Types(IntEnum):
+    CATEGORY = 0
     NAME = 2
     UNIT = 5
     STATE = 6
@@ -43,6 +47,28 @@ class NagiosState(Enum):
     WARNING = 1
     CRITICAL = 2
     UNKNOWN = 3
+
+
+categories = {
+    2: "Temperature",
+    3: "Humidity",
+    4: "Dry Contact",
+    5: "Current 4 to 20mA",
+    6: "DC voltage",
+    7: "Airflow",
+    8: "Motion",
+    9: "Water",
+    10: "Security",
+    11: "Siren",
+    12: "Relay",
+    13: "AC voltage",
+    14: "Smoke",
+    21: "Water rope",
+    22: "Power",
+    24: "Fuel",
+    26: "Tank sender",
+    27: "Door"
+}
 
 
 # Convert a state from AKCP format to Nagios
@@ -63,11 +89,15 @@ def convert_state_to_nagios(state_to_convert):
 def print_status_message(sensor_states, perf_data):
     warning_name_string = ""
     for name in sensor_states["WARNING"]:
-        warning_name_string += ", " if not warning_name_string == "" else "" + name
+        if warning_name_string:
+            warning_name_string += ", "
+        warning_name_string += name
 
     critical_name_string = ""
     for name in sensor_states["CRITICAL"]:
-        critical_name_string += ", " if not critical_name_string == "" else "" + name
+        if critical_name_string:
+            critical_name_string += ", "
+        critical_name_string += name
 
     result_message = ""
     if len(sensor_states["WARNING"]) > 0 and len(sensor_states["CRITICAL"]) > 0:
@@ -121,7 +151,7 @@ args = parser.parse_args()
 # Print version if version argument is given
 if args.version:
     print "AKCP SensorProbe2+ Version %s" % version
-    exit()
+    sys.exit()
 else:
     # Assert arguments to their variables
     verbose = args.verbose if args.verbose <= 2 else 2
@@ -156,10 +186,9 @@ if errorIndication:
     print "%s sensorProbe2plus: %s" % (NagiosState.UNKNOWN.name, errorIndication)
     mostImportantState = NagiosState.UNKNOWN
 elif errorStatus:
-    print('%s sensorProbe2plus: %s at %s' % (
-        NagiosState.CRITICAL.name,
-        errorStatus.prettyPrint(), errorIndex and result[int(errorIndex)-1] or '?')
-    )
+    print('%s sensorProbe2plus: %s at %s' % (NagiosState.CRITICAL.name,
+                                             errorStatus.prettyPrint(),
+                                             errorIndex and result[int(errorIndex)-1] or '?'))
     mostImportantState = NagiosState.CRITICAL
 else:
     # Sort results
@@ -181,7 +210,7 @@ else:
 
         # Filter ports if port is given in arguments
         sensorPort = int(oid[15])
-        if not args.port == 0 and not args.port - 1 == sensorPort:
+        if args.port != 0 and args.port - 1 != sensorPort:
             continue
 
         # Numeric index of sensor
@@ -195,11 +224,12 @@ else:
 
         # Store data in dictionary tree
         sensorPorts[sensorPort][sensorIndex][valueIndex] = value
+        sensorPorts[sensorPort][sensorIndex][Types.CATEGORY] = categories[category]
 
     # Check if there is no sensor on the given port
     if len(sensorPorts) < 1:
         print "%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name
-        exit(NagiosState.UNKNOWN.value)
+        sys.exit(NagiosState.UNKNOWN.value)
 
     # Sensor names sorted by state
     namesByState = {"OK": [], "WARNING": [], "CRITICAL": []}
@@ -238,24 +268,29 @@ else:
                     valueIndexes[Types.HIGH_CRITICAL] = float(valueIndexes[Types.HIGH_CRITICAL]) / 10
 
                 # Status message for sensor
-                stateMessage = "%s %s: %s%s" % (
-                    state.name, valueIndexes[Types.NAME], valueIndexes[Types.VALUE], valueIndexes[Types.UNIT]
-                )
+                stateMessage = '%s %s sensor "%s": %s%s' % (state.name,
+                                                            valueIndexes[Types.CATEGORY],
+                                                            valueIndexes[Types.NAME],
+                                                            valueIndexes[Types.VALUE],
+                                                            valueIndexes[Types.UNIT])
 
                 # Add thresholds to verbose sensor messages
                 if verbose > 1:
-                    stateMessage += " (%s:%s/%s:%s)" % (
-                        valueIndexes[Types.LOW_WARNING], valueIndexes[Types.HIGH_WARNING],
-                        valueIndexes[Types.LOW_CRITICAL], valueIndexes[Types.HIGH_CRITICAL])
+                    stateMessage += " (%s:%s/%s:%s)" % (valueIndexes[Types.LOW_WARNING],
+                                                        valueIndexes[Types.HIGH_WARNING],
+                                                        valueIndexes[Types.LOW_CRITICAL],
+                                                        valueIndexes[Types.HIGH_CRITICAL])
 
                 stateMessages.append(stateMessage)
 
                 # Add performance data to performance data array
-                perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (
-                    valueIndexes[Types.NAME], valueIndexes[Types.VALUE], valueIndexes[Types.UNIT],
-                    valueIndexes[Types.LOW_WARNING], valueIndexes[Types.HIGH_WARNING], valueIndexes[Types.LOW_CRITICAL],
-                    valueIndexes[Types.HIGH_CRITICAL])
-                )
+                perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (valueIndexes[Types.NAME],
+                                                           valueIndexes[Types.VALUE],
+                                                           valueIndexes[Types.UNIT],
+                                                           valueIndexes[Types.LOW_WARNING],
+                                                           valueIndexes[Types.HIGH_WARNING],
+                                                           valueIndexes[Types.LOW_CRITICAL],
+                                                           valueIndexes[Types.HIGH_CRITICAL]))
 
     # Print first line of output
     print_status_message(namesByState, perfData)
@@ -266,4 +301,4 @@ else:
             print message
 
     # Exit with most important state
-    exit(mostImportantState.value)
+    sys.exit(mostImportantState.value)
