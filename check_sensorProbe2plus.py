@@ -19,7 +19,7 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 # ------------------------------------------------------------------------------
 
-from easysnmp import Session
+from pysnmp.entity.rfc3413.oneliner import cmdgen
 from enum import Enum, IntEnum
 import argparse
 
@@ -64,7 +64,7 @@ def print_status_message(sensor_states, perf_data):
     result_message = ""
     if len(perf_data) < 1:
         print "%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name
-        exit(NagiosState.UNKNOWN)
+        exit(NagiosState.UNKNOWN.value)
     elif len(sensor_states["WARNING"]) > 0 and len(sensor_states["CRITICAL"]) > 0:
         result_message = "CRITICAL sensorProbe2plus: Sensor reports state CRITICAL for %d sensor%s (%s) " \
                 "and state WARNING for %d sensor%s (%s)" % (
@@ -116,85 +116,101 @@ else:
     community = args.community
     port = args.port
 
-session = Session(hostname=hostname, community=community, version=2)
-result = session.walk("1.3.6.1.4.1.3854.3.5")
+sensorsOID = (1, 3, 6, 1, 4, 1, 3854, 3, 5)
+
+generator = cmdgen.CommandGenerator()
+communityData = cmdgen.CommunityData(community)
+transport = cmdgen.UdpTransportTarget((hostname, 161))
+command = getattr(generator, 'nextCmd')
+
+errorIndication, errorStatus, errorIndex, result = command(communityData, transport, sensorsOID)
 
 mostImportantState = NagiosState.OK
 stateMessages = []
 perfData = []
 sensorPorts = {}
 
-for data in result:
-    oid = data.oid.split(".")
-    value = data.value
+if errorIndication:
+    print "%s sensorProbe2plus: %s" % (NagiosState.UNKNOWN.name, errorIndication)
+    mostImportantState = NagiosState.UNKNOWN
+elif errorStatus:
+    print('%s sensorProbe2plus: %s at %s' % (
+        NagiosState.CRITICAL.name,
+        errorStatus.prettyPrint(), errorIndex and result[int(errorIndex)-1] or '?')
+    )
+    mostImportantState = NagiosState.CRITICAL
+else:
+    for data in result:
+        oid = data[0][0]
+        value = data[0][1]
 
-    valueIndex = int(oid[11])
+        valueIndex = int(oid[11])
 
-    try:
-        Types(valueIndex)
-    except ValueError:
-        continue
-
-    category = int(oid[9])
-    if category == 1 or category > 20:
-        continue
-
-    sensorPort = int(oid[15])
-    if not args.port == 0 and not args.port - 1 == sensorPort:
-        continue
-
-    sensorIndex = int(oid[16])
-
-    if sensorPort not in sensorPorts:
-        sensorPorts[sensorPort] = {}
-
-    if sensorIndex not in sensorPorts[sensorPort]:
-        sensorPorts[sensorPort][sensorIndex] = {}
-
-    sensorPorts[sensorPort][sensorIndex][valueIndex] = value
-
-states = {"OK": [], "WARNING": [], "CRITICAL": []}
-for sensorPort, sensorIndexes in sensorPorts.iteritems():
-    for sensorIndex, valueIndexes in sensorIndexes.iteritems():
-        state = convert_state_to_nagios(valueIndexes[Types.STATE])
-        if state.value > mostImportantState.value:
-            mostImportantState = state
-
-        states[state.name].append(valueIndexes[Types.NAME])
-
-        if Types.VALUE not in valueIndexes:
-            value = 0 if state == NagiosState.OK else 1
-            stateMessages.append(
-                "%s %s" % (state.name, valueIndexes[Types.NAME]))
-            perfData.append("'%s'=%s;" % (valueIndexes[Types.NAME], value))
+        try:
+            Types(valueIndex)
+        except ValueError as err:
             continue
 
-        if valueIndexes[Types.UNIT] == "C":
-            valueIndexes[Types.VALUE] = float(valueIndexes[Types.VALUE]) / 10
-            valueIndexes[Types.LOW_CRITICAL] = float(valueIndexes[Types.LOW_CRITICAL]) / 10
-            valueIndexes[Types.LOW_WARNING] = float(valueIndexes[Types.LOW_WARNING]) / 10
-            valueIndexes[Types.HIGH_WARNING] = float(valueIndexes[Types.HIGH_WARNING]) / 10
-            valueIndexes[Types.HIGH_CRITICAL] = float(valueIndexes[Types.HIGH_CRITICAL]) / 10
+        category = int(oid[9])
+        if category == 1 or category > 20:
+            continue
 
-        stateMessage = "%s %s: %s%s" % (
-            state.name, valueIndexes[Types.NAME], valueIndexes[Types.VALUE], valueIndexes[Types.UNIT]
-        )
-        if verbose > 1:
-            stateMessage += "|" + "%s:%s;%s:%s" % (
-                valueIndexes[Types.LOW_WARNING], valueIndexes[Types.HIGH_WARNING],
-                valueIndexes[Types.LOW_CRITICAL], valueIndexes[Types.HIGH_CRITICAL])
+        sensorPort = int(oid[15])
+        if not args.port == 0 and not args.port - 1 == sensorPort:
+            continue
 
-        stateMessages.append(stateMessage)
-        perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (
-            valueIndexes[Types.NAME], valueIndexes[Types.VALUE], valueIndexes[Types.UNIT],
-            valueIndexes[Types.LOW_WARNING], valueIndexes[Types.HIGH_WARNING], valueIndexes[Types.LOW_CRITICAL],
-            valueIndexes[Types.HIGH_CRITICAL])
-        )
+        sensorIndex = int(oid[16])
 
-print_status_message(states, perfData)
+        if sensorPort not in sensorPorts:
+            sensorPorts[sensorPort] = {}
 
-if verbose > 0:
-    for message in stateMessages:
-        print message
+        if sensorIndex not in sensorPorts[sensorPort]:
+            sensorPorts[sensorPort][sensorIndex] = {}
 
-exit(mostImportantState.value)
+        sensorPorts[sensorPort][sensorIndex][valueIndex] = value
+
+    states = {"OK": [], "WARNING": [], "CRITICAL": []}
+    for sensorPort, sensorIndexes in sensorPorts.iteritems():
+        for sensorIndex, valueIndexes in sensorIndexes.iteritems():
+            state = convert_state_to_nagios(valueIndexes[Types.STATE])
+            if state.value > mostImportantState.value:
+                mostImportantState = state
+
+            states[state.name].append(valueIndexes[Types.NAME])
+
+            if Types.VALUE not in valueIndexes:
+                value = 0 if state == NagiosState.OK else 1
+                stateMessages.append(
+                    "%s %s" % (state.name, valueIndexes[Types.NAME]))
+                perfData.append("'%s'=%s;" % (valueIndexes[Types.NAME], value))
+                continue
+
+            if valueIndexes[Types.UNIT] == "C":
+                valueIndexes[Types.VALUE] = float(valueIndexes[Types.VALUE]) / 10
+                valueIndexes[Types.LOW_CRITICAL] = float(valueIndexes[Types.LOW_CRITICAL]) / 10
+                valueIndexes[Types.LOW_WARNING] = float(valueIndexes[Types.LOW_WARNING]) / 10
+                valueIndexes[Types.HIGH_WARNING] = float(valueIndexes[Types.HIGH_WARNING]) / 10
+                valueIndexes[Types.HIGH_CRITICAL] = float(valueIndexes[Types.HIGH_CRITICAL]) / 10
+
+            stateMessage = "%s %s: %s%s" % (
+                state.name, valueIndexes[Types.NAME], valueIndexes[Types.VALUE], valueIndexes[Types.UNIT]
+            )
+            if verbose > 1:
+                stateMessage += "|" + "%s:%s;%s:%s" % (
+                    valueIndexes[Types.LOW_WARNING], valueIndexes[Types.HIGH_WARNING],
+                    valueIndexes[Types.LOW_CRITICAL], valueIndexes[Types.HIGH_CRITICAL])
+
+            stateMessages.append(stateMessage)
+            perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (
+                valueIndexes[Types.NAME], valueIndexes[Types.VALUE], valueIndexes[Types.UNIT],
+                valueIndexes[Types.LOW_WARNING], valueIndexes[Types.HIGH_WARNING], valueIndexes[Types.LOW_CRITICAL],
+                valueIndexes[Types.HIGH_CRITICAL])
+            )
+
+    print_status_message(states, perfData)
+
+    if verbose > 0:
+        for message in stateMessages:
+            print message
+
+    exit(mostImportantState.value)
