@@ -12,7 +12,7 @@ releases:
     description: "1.0 Initial Release"
     files:
       -
-        name: check_kentix_multisensor
+        name: check_sensorProbe2plus.py
         url: "file:///check_sensorProbe2plus.py"
         description: none
         checksum: 2846c148947067ddf558c0bada7177ce
