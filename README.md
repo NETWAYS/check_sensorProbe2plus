@@ -8,6 +8,7 @@ This plugin serves the purpose of receiving data from the SensorProbe2+ and chec
 ### Dependencies ###
 
 + [PySNMP](https://github.com/etingof/pysnmp)
++ [enum34](https://pypi.org/project/enum34)
 
 ### Usage ###
 
