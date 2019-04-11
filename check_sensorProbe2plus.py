@@ -74,12 +74,17 @@ categories = {
 # Convert a state from AKCP format to Nagios
 def convert_state_to_nagios(state_to_convert):
     state_to_convert = int(state_to_convert)
-    if state_to_convert == 2:
+    if state_to_convert == 1:
+        return NagiosState.UNKNOWN
+    elif state_to_convert == 2:
         return NagiosState.OK
     elif state_to_convert == 3 or state_to_convert == 5:
         return NagiosState.WARNING
     elif state_to_convert == 4 or state_to_convert == 6:
         return NagiosState.CRITICAL
+    else:
+        print "State %s is out of range. That should not happen." % state_to_convert
+        return NagiosState.UNKNOWN
 
 
 # Display a one line status message with:
