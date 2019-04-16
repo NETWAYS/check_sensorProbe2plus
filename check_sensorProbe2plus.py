@@ -237,7 +237,7 @@ else:
         sys.exit(NagiosState.UNKNOWN.value)
 
     # Sensor names sorted by state
-    namesByState = {"OK": [], "WARNING": [], "CRITICAL": []}
+    namesByState = {"OK": [], "WARNING": [], "CRITICAL": [], "UNKNOWN": []}
 
     # Iterate through sensors
     for sensorPort, sensorIndexes in sensorPorts.iteritems():
