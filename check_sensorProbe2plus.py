@@ -246,8 +246,10 @@ else:
             state = convert_state_to_nagios(valueIndexes[Types.STATE])
 
             # Redetermines most important state
-            if state.value > mostImportantState.value:
+            if hasattr(state, 'value') and state.value > mostImportantState.value:
                 mostImportantState = state
+            else:
+                mostImportantState = NagiosState.UNKNOWN
 
             # Sort sensor name by state
             namesByState[state.name].append(valueIndexes[Types.NAME])
