@@ -83,7 +83,7 @@ def convert_state_to_nagios(state_to_convert):
     elif state_to_convert == 4 or state_to_convert == 6:
         return NagiosState.CRITICAL
     else:
-        print "State %s is out of range. That should not happen." % state_to_convert
+        print("State %s is out of range. That should not happen." % state_to_convert)
         return NagiosState.UNKNOWN
 
 
@@ -130,7 +130,7 @@ def print_status_message(sensor_states, perf_data):
         result_message += singlePerfData + " "
 
     # Print summary and performance data
-    print result_message
+    print(result_message)
 
 
 # Version number
@@ -155,7 +155,7 @@ args = parser.parse_args()
 
 # Print version if version argument is given
 if args.version:
-    print "AKCP SensorProbe2+ Version %s" % version
+    print("AKCP SensorProbe2+ Version %s" % version)
     sys.exit()
 else:
     # Assert arguments to their variables
@@ -188,12 +188,12 @@ errorIndication, errorStatus, errorIndex, result = command(communityData, transp
 
 # Check if an exception occurred
 if errorIndication:
-    print "%s sensorProbe2plus: %s" % (NagiosState.UNKNOWN.name, errorIndication)
+    print("%s sensorProbe2plus: %s" % (NagiosState.UNKNOWN.name, errorIndication))
     mostImportantState = NagiosState.UNKNOWN
 elif errorStatus:
-    print('%s sensorProbe2plus: %s at %s' % (NagiosState.CRITICAL.name,
+    print(('%s sensorProbe2plus: %s at %s' % (NagiosState.CRITICAL.name,
                                              errorStatus.prettyPrint(),
-                                             errorIndex and result[int(errorIndex)-1] or '?'))
+                                             errorIndex and result[int(errorIndex)-1] or '?')))
     mostImportantState = NagiosState.CRITICAL
 else:
     # Sort results
@@ -233,21 +233,23 @@ else:
 
     # Check if there is no sensor on the given port
     if len(sensorPorts) < 1:
-        print "%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name
+        print("%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name)
         sys.exit(NagiosState.UNKNOWN.value)
 
     # Sensor names sorted by state
     namesByState = {"OK": [], "WARNING": [], "CRITICAL": [], "UNKNOWN": []}
 
     # Iterate through sensors
-    for sensorPort, sensorIndexes in sensorPorts.iteritems():
-        for sensorIndex, valueIndexes in sensorIndexes.iteritems():
+    for sensorPort, sensorIndexes in sensorPorts.items():
+        for sensorIndex, valueIndexes in sensorIndexes.items():
             # Convert state to Nagios states
             state = convert_state_to_nagios(valueIndexes[Types.STATE])
 
             # Redetermines most important state
-            if state.value > mostImportantState.value:
+            if hasattr(state, 'value') and state.value > mostImportantState.value:
                 mostImportantState = state
+            else:
+                mostImportantState = NagiosState.UNKNOWN
 
             # Sort sensor name by state
             namesByState[state.name].append(valueIndexes[Types.NAME])
@@ -303,7 +305,7 @@ else:
     # Add additional information for each sensor to the output if verbose
     if verbose > 0:
         for message in stateMessages:
-            print message
+            print(message)
 
     # Exit with most important state
     sys.exit(mostImportantState.value)
