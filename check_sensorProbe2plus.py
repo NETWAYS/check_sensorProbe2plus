@@ -20,6 +20,7 @@
 
 import argparse
 import sys
+import typing
 from enum import Enum, IntEnum
 
 from pysnmp.entity.rfc3413.oneliner import cmdgen
@@ -202,7 +203,7 @@ stateMessages = []
 perfData = []
 
 # Root for sensor dictionary tree
-sensorPorts = {}
+sensorPorts: dict[int, typing.Any] = {}
 
 # Root for sensor OIDs
 sensorsOID = (1, 3, 6, 1, 4, 1, 3854, 3, 5)
@@ -277,7 +278,12 @@ else:
         sys.exit(NagiosState.UNKNOWN.value)
 
     # Sensor names sorted by state
-    namesByState = {"OK": [], "WARNING": [], "CRITICAL": [], "UNKNOWN": []}
+    namesByState: dict[str, list] = {
+        "OK": [],
+        "WARNING": [],
+        "CRITICAL": [],
+        "UNKNOWN": [],
+    }
 
     # Iterate through sensors
     for sensorPort, sensorIndexes in sensorPorts.items():
