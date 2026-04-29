@@ -2,10 +2,6 @@
 # ------------------------------------------------------------------------------
 # check_sensorProbe2plus.py - A check plugin for AKCP SensorProbe2+.
 # Copyright (C) 2017  NETWAYS GmbH, www.netways.de
-# Authors: Noah Hilverling <noah.hilverling@netways.de>
-#          Jennifer Mourek <jennifer.mourek@netways.de>
-#
-# Version: 1.0
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -22,14 +18,36 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 # ------------------------------------------------------------------------------
 
+"""
+check_sensorProbe2plus.py is a Check Plugin for Nagios similar monitoring systems
+like Icinga or Nameon.
+It retrieves data from a AKCP SensorProbe2+ devices and alerts on problematic
+conditions
+"""
+
 import argparse
+import asyncio as other_asyncio_name
 import sys
-from pysnmp.entity.rfc3413.oneliner import cmdgen
+import typing
 from enum import Enum, IntEnum
 
+import pysnmp
+# pylint: disable=import-error,no-name-in-module
+from pysnmp.hlapi.v3arch.asyncio import SnmpEngine as pySnmp_engine
+from pysnmp.hlapi.v3arch.asyncio import next_cmd as pySnmp_next_cmd
 
-# Translate the OID indexes to keywords
+# Version number
+VERSION = 1.1
+
+# Root for sensor OIDs
+SENSORS_OID = (1, 3, 6, 1, 4, 1, 3854, 3, 5)
+
+# pylint: disable=consider-using-f-string
+
+
 class Types(IntEnum):
+    """Translate the OID indexes to keywords"""
+
     CATEGORY = 0
     NAME = 2
     UNIT = 5
@@ -41,8 +59,9 @@ class Types(IntEnum):
     VALUE = 20
 
 
-# Translate the Nagios state IDs to keywords
 class NagiosState(Enum):
+    """Translate the Nagios state IDs to keywords"""
+
     OK = 0
     WARNING = 1
     CRITICAL = 2
@@ -67,31 +86,35 @@ categories = {
     22: "Power",
     24: "Fuel",
     26: "Tank sender",
-    27: "Door"
+    27: "Door",
 }
 
 
-# Convert a state from AKCP format to Nagios
 def convert_state_to_nagios(state_to_convert):
+    """
+    Convert a state from AKCP format to Nagios
+    """
     state_to_convert = int(state_to_convert)
     if state_to_convert == 1:
         return NagiosState.UNKNOWN
-    elif state_to_convert == 2:
+    if state_to_convert == 2:
         return NagiosState.OK
-    elif state_to_convert == 3 or state_to_convert == 5:
+    if state_to_convert in (3, 5):
         return NagiosState.WARNING
-    elif state_to_convert == 4 or state_to_convert == 6:
+    if state_to_convert in (4, 6):
         return NagiosState.CRITICAL
-    else:
-        print("State %s is out of range. That should not happen." % state_to_convert)
-        return NagiosState.UNKNOWN
+
+    print("State %s is out of range. That should not happen." % state_to_convert)
+    return NagiosState.UNKNOWN
 
 
-# Display a one line status message with:
-#   - most important Nagios state and short message
-#   - number and name of the sensors in any state but OK
-#   - thresholds of the sensors
 def print_status_message(sensor_states, perf_data):
+    """
+    Display a one line status message with:
+        - most important Nagios state and short message
+        - number and name of the sensors in any state but OK
+        - thresholds of the sensors
+    """
     warning_name_string = ""
     for name in sensor_states["WARNING"]:
         if warning_name_string:
@@ -106,206 +129,290 @@ def print_status_message(sensor_states, perf_data):
 
     result_message = ""
     if len(sensor_states["WARNING"]) > 0 and len(sensor_states["CRITICAL"]) > 0:
-        result_message = "CRITICAL sensorProbe2plus: Sensor reports state CRITICAL for %d sensor%s (%s) " \
-                "and state WARNING for %d sensor%s (%s)" % (
-                    len(sensor_states["CRITICAL"]),
-                    "s" if len(sensor_states["CRITICAL"]) > 1 else "",
-                    critical_name_string,
-                    len(sensor_states["WARNING"]),
-                    "s" if len(sensor_states["WARNING"]) > 1 else "",
-                    warning_name_string
-                )
+        result_message = (
+            "CRITICAL sensorProbe2plus: Sensor reports state CRITICAL for {} sensor{} ({}) "
+            "and state WARNING for {} sensor{} ({})".format(
+                len(sensor_states["CRITICAL"]),
+                "s" if len(sensor_states["CRITICAL"]) > 1 else "",
+                critical_name_string,
+                len(sensor_states["WARNING"]),
+                "s" if len(sensor_states["WARNING"]) > 1 else "",
+                warning_name_string,
+            )
+        )
     elif len(sensor_states["WARNING"]) > 0:
-        result_message = "WARNING sensorProbe2plus: Sensor reports state WARNING for %d sensor%s (%s)" % (
-            len(sensor_states["WARNING"]), "s" if len(sensor_states["WARNING"]) > 1 else "", warning_name_string)
+        result_message = (
+            "WARNING sensorProbe2plus: Sensor reports state WARNING for %d sensor%s (%s)"
+            % (
+                len(sensor_states["WARNING"]),
+                "s" if len(sensor_states["WARNING"]) > 1 else "",
+                warning_name_string,
+            )
+        )
     elif len(sensor_states["CRITICAL"]) > 0:
-        result_message = "CRITICAL sensorProbe2plus: Sensor reports state CRITICAL for %d sensor%s (%s)" % (
-            len(sensor_states["CRITICAL"]), "s" if len(sensor_states["CRITICAL"]) > 1 else "", critical_name_string)
+        result_message = (
+            "CRITICAL sensorProbe2plus: Sensor reports state CRITICAL for %d sensor%s (%s)"
+            % (
+                len(sensor_states["CRITICAL"]),
+                "s" if len(sensor_states["CRITICAL"]) > 1 else "",
+                critical_name_string,
+            )
+        )
     else:
         result_message = "OK sensorProbe2plus: Sensor reports that everything is fine"
 
     # Add the performance data to the end of the first output line
     result_message += "|"
-    for singlePerfData in perf_data:
-        result_message += singlePerfData + " "
+    for single_perfdata in perf_data:
+        result_message += single_perfdata + " "
 
     # Print summary and performance data
     print(result_message)
 
 
-# Version number
-version = 1.0
+def parse_args() -> tuple[int, str, str, int]:
+    """
+    Parse CLI arguments
+    """
+    parser = argparse.ArgumentParser(description="Check plugin for AKCP SensorProbe2+")
+    parser.add_argument("-V", "--version", action="store_true")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="increase output verbosity (-v or -vv)",
+    )
+    parser.add_argument(
+        "-p",
+        "--port",
+        help="port of the sensors to check (shows all if not set)",
+        type=int,
+        default=0,
+    )
+    required = parser.add_argument_group("required arguments")
+    required.add_argument(
+        "-H", "--hostname", help="host of the sensor probe", required=True
+    )
+    required.add_argument(
+        "-C", "--community", help="read community of the sensor probe", required=True
+    )
 
-# Initialise variables
-verbose = 0
-hostname = ""
-community = ""
-port = 0
+    args = parser.parse_args()
 
-# Arguments for the CLI command
-parser = argparse.ArgumentParser(description='Check plugin for AKCP SensorProbe2+')
-parser.add_argument("-V", "--version", action="store_true")
-parser.add_argument("-v", "--verbose", action="count", default=0, help="increase output verbosity (-v or -vv)")
-parser.add_argument("-p", "--port", help="port of the sensors to check (shows all if not set)", type=int, default=0)
-required = parser.add_argument_group('required arguments')
-required.add_argument("-H", "--hostname", help="host of the sensor probe", required=True)
-required.add_argument("-C", "--community", help="read community of the sensor probe", required=True)
+    # Print version if version argument is given
+    if args.version:
+        print("check_sensorProbe2plus version %s" % VERSION)
+        sys.exit()
+    else:
+        # Assert arguments to their variables
+        verbose = args.verbose if args.verbose <= 2 else 2
+        hostname = args.hostname
+        community = args.community
+        port = args.port
+        return (verbose, hostname, community, port)
 
-args = parser.parse_args()
 
-# Print version if version argument is given
-if args.version:
-    print("AKCP SensorProbe2+ Version %s" % version)
-    sys.exit()
-else:
-    # Assert arguments to their variables
-    verbose = args.verbose if args.verbose <= 2 else 2
-    hostname = args.hostname
-    community = args.community
-    port = args.port
+def execute(hostname, sensor_port_input, community, verbose) -> None:
+    """
+    Execute the actual test
+    """
+    # Array of messages to print after first line if verbose
+    state_messages = []
 
-# The state with the highest importance (CRITICAL -> WARNING -> OK)
-mostImportantState = NagiosState.OK
+    # Performance data for each sensor as string
+    perfdata = []
 
-# Array of messages to print after first line if verbose
-stateMessages = []
+    # Root for sensor dictionary tree
+    sensor_ports: dict[int, typing.Any] = {}
 
-# Performance data for each sensor as string
-perfData = []
+    error_indication, error_status, error_index, result = other_asyncio_name.run(
+        snmp_query(hostname, 161, SENSORS_OID, community)
+    )
 
-# Root for sensor dictionary tree
-sensorPorts = {}
+    # The state with the highest importance (CRITICAL -> WARNING -> OK)
+    most_important_state = NagiosState.OK
 
-# Root for sensor OIDs
-sensorsOID = (1, 3, 6, 1, 4, 1, 3854, 3, 5)
+    if error_indication:
+        print("%s sensorProbe2plus: %s" % (NagiosState.UNKNOWN.name, error_indication))
+        most_important_state = NagiosState.UNKNOWN
+    elif error_status:
+        print(
+            (
+                "%s sensorProbe2plus: %s at %s"
+                % (
+                    NagiosState.CRITICAL.name,
+                    error_status.prettyPrint(),
+                    error_index and result[int(error_index) - 1] or "?",
+                )
+            )
+        )
+        most_important_state = NagiosState.CRITICAL
+    else:
+        # Sort results
+        for data in result:
+            oid = data[0][0]
+            value = data[0][1]
 
-generator = cmdgen.CommandGenerator()
-communityData = cmdgen.CommunityData(community)
-transport = cmdgen.UdpTransportTarget((hostname, 161))
-command = getattr(generator, 'nextCmd')
+            # Filter relevant OIDs
+            value_index = int(oid[11])
+            try:
+                Types(value_index)
+            except ValueError:
+                continue
 
-errorIndication, errorStatus, errorIndex, result = command(communityData, transport, sensorsOID)
+            # Get sensor category
+            category = int(oid[9])
+            if category == 1 or category > 27:
+                continue
 
-# Check if an exception occurred
-if errorIndication:
-    print("%s sensorProbe2plus: %s" % (NagiosState.UNKNOWN.name, errorIndication))
-    mostImportantState = NagiosState.UNKNOWN
-elif errorStatus:
-    print(('%s sensorProbe2plus: %s at %s' % (NagiosState.CRITICAL.name,
-                                             errorStatus.prettyPrint(),
-                                             errorIndex and result[int(errorIndex)-1] or '?')))
-    mostImportantState = NagiosState.CRITICAL
-else:
-    # Sort results
-    for data in result:
-        oid = data[0][0]
-        value = data[0][1]
+            # Filter ports if port is given in arguments
+            sensor_port = int(oid[15])
+            if sensor_port_input != 0 and sensor_port_input - 1 != sensor_port:
+                continue
 
-        # Filter relevant OIDs
-        valueIndex = int(oid[11])
-        try:
-            Types(valueIndex)
-        except ValueError as err:
-            continue
+            # Numeric index of sensor
+            sensor_index = int(oid[16])
 
-        # Get sensor category
-        category = int(oid[9])
-        if category == 1 or category > 27:
-            continue
+            # Add needed dictionaries if not yet existing
+            if sensor_port not in sensor_ports:
+                sensor_ports[sensor_port] = {}
+            if sensor_index not in sensor_ports[sensor_port]:
+                sensor_ports[sensor_port][sensor_index] = {}
 
-        # Filter ports if port is given in arguments
-        sensorPort = int(oid[15])
-        if args.port != 0 and args.port - 1 != sensorPort:
-            continue
+            # Store data in dictionary tree
+            sensor_ports[sensor_port][sensor_index][value_index] = value
+            sensor_ports[sensor_port][sensor_index][Types.CATEGORY] = categories[
+                category
+            ]
 
-        # Numeric index of sensor
-        sensorIndex = int(oid[16])
+        # Check if there is no sensor on the given port
+        if len(sensor_ports) < 1:
+            print(
+                "%s sensorProbe2plus: There is no sensor on the given port"
+                % NagiosState.UNKNOWN.name
+            )
+            sys.exit(NagiosState.UNKNOWN.value)
 
-        # Add needed dictionaries if not yet existing
-        if sensorPort not in sensorPorts:
-            sensorPorts[sensorPort] = {}
-        if sensorIndex not in sensorPorts[sensorPort]:
-            sensorPorts[sensorPort][sensorIndex] = {}
+        # Sensor names sorted by state
+        names_by_state: dict[str, list] = {
+            "OK": [],
+            "WARNING": [],
+            "CRITICAL": [],
+            "UNKNOWN": [],
+        }
 
-        # Store data in dictionary tree
-        sensorPorts[sensorPort][sensorIndex][valueIndex] = value
-        sensorPorts[sensorPort][sensorIndex][Types.CATEGORY] = categories[category]
+        # Iterate through sensors
+        for sensor_port, sensor_indexes in sensor_ports.items():
+            for sensor_index, value_indexes in sensor_indexes.items():
+                # Convert state to Nagios states
+                state = convert_state_to_nagios(value_indexes[Types.STATE])
 
-    # Check if there is no sensor on the given port
-    if len(sensorPorts) < 1:
-        print("%s sensorProbe2plus: There is no sensor on the given port" % NagiosState.UNKNOWN.name)
-        sys.exit(NagiosState.UNKNOWN.value)
+                # Redetermines most important state
+                if hasattr(state, "value") and state.value > most_important_state.value:
+                    most_important_state = state
+                else:
+                    most_important_state = NagiosState.UNKNOWN
 
-    # Sensor names sorted by state
-    namesByState = {"OK": [], "WARNING": [], "CRITICAL": [], "UNKNOWN": []}
+                # Sort sensor name by state
+                names_by_state[state.name].append(value_indexes[Types.NAME])
 
-    # Iterate through sensors
-    for sensorPort, sensorIndexes in sensorPorts.items():
-        for sensorIndex, valueIndexes in sensorIndexes.items():
-            # Convert state to Nagios states
-            state = convert_state_to_nagios(valueIndexes[Types.STATE])
+                # Check if sensor has no value
+                if Types.VALUE not in value_indexes:
+                    # Value replacement for sensors without value
+                    value = 0 if state == NagiosState.OK else 1
 
-            # Redetermines most important state
-            if hasattr(state, 'value') and state.value > mostImportantState.value:
-                mostImportantState = state
-            else:
-                mostImportantState = NagiosState.UNKNOWN
+                    # Status message for sensor
+                    state_messages.append(
+                        "%s %s" % (state.name, value_indexes[Types.NAME])
+                    )
 
-            # Sort sensor name by state
-            namesByState[state.name].append(valueIndexes[Types.NAME])
+                    # Add performance data to performance data array
+                    perfdata.append("'%s'=%s;" % (value_indexes[Types.NAME], value))
+                else:
+                    # Convert temperatures into right format
+                    if value_indexes[Types.UNIT] == "C":
+                        value_indexes[Types.VALUE] = (
+                            float(value_indexes[Types.VALUE]) / 10
+                        )
+                        value_indexes[Types.LOW_CRITICAL] = (
+                            float(value_indexes[Types.LOW_CRITICAL]) / 10
+                        )
+                        value_indexes[Types.LOW_WARNING] = (
+                            float(value_indexes[Types.LOW_WARNING]) / 10
+                        )
+                        value_indexes[Types.HIGH_WARNING] = (
+                            float(value_indexes[Types.HIGH_WARNING]) / 10
+                        )
+                        value_indexes[Types.HIGH_CRITICAL] = (
+                            float(value_indexes[Types.HIGH_CRITICAL]) / 10
+                        )
 
-            # Check if sensor has no value
-            if Types.VALUE not in valueIndexes:
-                # Value replacement for sensors without value
-                value = 0 if state == NagiosState.OK else 1
+                    # Status message for sensor
+                    state_message = '%s %s sensor "%s": %s%s' % (
+                        state.name,
+                        value_indexes[Types.CATEGORY],
+                        value_indexes[Types.NAME],
+                        value_indexes[Types.VALUE],
+                        value_indexes[Types.UNIT],
+                    )
 
-                # Status message for sensor
-                stateMessages.append(
-                    "%s %s" % (state.name, valueIndexes[Types.NAME]))
+                    # Add thresholds to verbose sensor messages
+                    if verbose > 1:
+                        state_message += " (%s:%s/%s:%s)" % (
+                            value_indexes[Types.LOW_WARNING],
+                            value_indexes[Types.HIGH_WARNING],
+                            value_indexes[Types.LOW_CRITICAL],
+                            value_indexes[Types.HIGH_CRITICAL],
+                        )
 
-                # Add performance data to performance data array
-                perfData.append("'%s'=%s;" % (valueIndexes[Types.NAME], value))
-            else:
-                # Convert temperatures into right format
-                if valueIndexes[Types.UNIT] == "C":
-                    valueIndexes[Types.VALUE] = float(valueIndexes[Types.VALUE]) / 10
-                    valueIndexes[Types.LOW_CRITICAL] = float(valueIndexes[Types.LOW_CRITICAL]) / 10
-                    valueIndexes[Types.LOW_WARNING] = float(valueIndexes[Types.LOW_WARNING]) / 10
-                    valueIndexes[Types.HIGH_WARNING] = float(valueIndexes[Types.HIGH_WARNING]) / 10
-                    valueIndexes[Types.HIGH_CRITICAL] = float(valueIndexes[Types.HIGH_CRITICAL]) / 10
+                    state_messages.append(state_message)
 
-                # Status message for sensor
-                stateMessage = '%s %s sensor "%s": %s%s' % (state.name,
-                                                            valueIndexes[Types.CATEGORY],
-                                                            valueIndexes[Types.NAME],
-                                                            valueIndexes[Types.VALUE],
-                                                            valueIndexes[Types.UNIT])
+                    # Add performance data to performance data array
+                    perfdata.append(
+                        "'%s'=%s%s;%s:%s;%s:%s"
+                        % (
+                            value_indexes[Types.NAME],
+                            value_indexes[Types.VALUE],
+                            value_indexes[Types.UNIT],
+                            value_indexes[Types.LOW_WARNING],
+                            value_indexes[Types.HIGH_WARNING],
+                            value_indexes[Types.LOW_CRITICAL],
+                            value_indexes[Types.HIGH_CRITICAL],
+                        )
+                    )
 
-                # Add thresholds to verbose sensor messages
-                if verbose > 1:
-                    stateMessage += " (%s:%s/%s:%s)" % (valueIndexes[Types.LOW_WARNING],
-                                                        valueIndexes[Types.HIGH_WARNING],
-                                                        valueIndexes[Types.LOW_CRITICAL],
-                                                        valueIndexes[Types.HIGH_CRITICAL])
+        # Print first line of output
+        print_status_message(names_by_state, perfdata)
 
-                stateMessages.append(stateMessage)
+        # Add additional information for each sensor to the output if verbose
+        if verbose > 0:
+            for message in state_messages:
+                print(message)
 
-                # Add performance data to performance data array
-                perfData.append("'%s'=%s%s;%s:%s;%s:%s" % (valueIndexes[Types.NAME],
-                                                           valueIndexes[Types.VALUE],
-                                                           valueIndexes[Types.UNIT],
-                                                           valueIndexes[Types.LOW_WARNING],
-                                                           valueIndexes[Types.HIGH_WARNING],
-                                                           valueIndexes[Types.LOW_CRITICAL],
-                                                           valueIndexes[Types.HIGH_CRITICAL]))
+        # Exit with most important state
+        sys.exit(most_important_state.value)
 
-    # Print first line of output
-    print_status_message(namesByState, perfData)
 
-    # Add additional information for each sensor to the output if verbose
-    if verbose > 0:
-        for message in stateMessages:
-            print(message)
+async def snmp_query(hostname, port, oid, community):
+    """
+    snmp_query executes the actual query
+    """
+    snmp_engine = pySnmp_engine()
 
-    # Exit with most important state
-    sys.exit(mostImportantState.value)
+    snmp_object = pysnmp.smi.rfc1902.ObjectType(pysnmp.smi.rfc1902.ObjectIdentity(oid))
+    # pylint: disable=c-extension-no-member
+    error_indication, error_status, error_index, result = await pySnmp_next_cmd(
+        snmp_engine,
+        pysnmp.hlapi.v3arch.asyncio.auth.CommunityData(community),
+        await pysnmp.hlapi.v3arch.asyncio.UdpTransportTarget.create((hostname, port)),
+        pysnmp.hlapi.v3arch.asyncio.ContextData(),
+        snmp_object,
+    )
+
+    return (error_indication, error_status, error_index, result)
+
+
+if __name__ == "__main__":
+    verbose, hostname, community, sensor_port = parse_args()
+    execute(hostname, sensor_port, community, verbose)
