@@ -32,6 +32,7 @@ import typing
 from enum import Enum, IntEnum
 
 import pysnmp
+# pylint: disable=import-error,no-name-in-module
 from pysnmp.hlapi.v3arch.asyncio import SnmpEngine as pySnmp_engine
 from pysnmp.hlapi.v3arch.asyncio import next_cmd as pySnmp_next_cmd
 
@@ -400,6 +401,7 @@ async def snmp_query(hostname, port, oid, community):
     snmp_engine = pySnmp_engine()
 
     snmp_object = pysnmp.smi.rfc1902.ObjectType(pysnmp.smi.rfc1902.ObjectIdentity(oid))
+    # pylint: disable=c-extension-no-member
     error_indication, error_status, error_index, result = await pySnmp_next_cmd(
         snmp_engine,
         pysnmp.hlapi.v3arch.asyncio.auth.CommunityData(community),
