@@ -2,10 +2,6 @@
 # ------------------------------------------------------------------------------
 # check_sensorProbe2plus.py - A check plugin for AKCP SensorProbe2+.
 # Copyright (C) 2017  NETWAYS GmbH, www.netways.de
-# Authors: Noah Hilverling <noah.hilverling@netways.de>
-#          Jennifer Mourek <jennifer.mourek@netways.de>
-#
-# Version: 1.0
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
