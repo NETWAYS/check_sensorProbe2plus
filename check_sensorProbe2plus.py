@@ -243,7 +243,7 @@ else:
         valueIndex = int(oid[11])
         try:
             Types(valueIndex)
-        except ValueError as err:
+        except ValueError:
             continue
 
         # Get sensor category
